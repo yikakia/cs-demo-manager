@@ -1,60 +1,58 @@
-import { MatchesXlsxExport } from 'csdm/node/xlsx/matches-xlsx-export';
 import { RendererServerMessageName } from 'csdm/server/renderer-server-message-name';
 import { server } from 'csdm/server/server';
-import { MatchXlsxExport } from 'csdm/node/xlsx/match-xlsx-export';
-import type { SheetName } from 'csdm/node/xlsx/sheet-name';
+import type { PlayerSheetName } from 'csdm/node/xlsx/player-sheet-name';
+import type { FetchPlayerFilters } from 'csdm/node/database/player/fetch-player-filters';
+import { PlayerXlsxExport } from 'csdm/node/xlsx/player-export/player-export';
+import { PlayersXlsxExport } from 'csdm/node/xlsx/players-export/players-xlsx-export';
 import type { ExportToXlsxSuccessPayload } from 'csdm/common/types/xlsx';
 
 type SheetsVisibility = {
-  [SheetName.General]: boolean;
-  [SheetName.Players]: boolean;
-  [SheetName.Rounds]: boolean;
-  [SheetName.Kills]: boolean;
-  [SheetName.Weapons]: boolean;
-  [SheetName.Clutches]: boolean;
-  [SheetName.PlayersFlashbangMatrix]: boolean;
+  [PlayerSheetName.General]: boolean;
+  [PlayerSheetName.Clutch]: boolean;
+  [PlayerSheetName.Maps]: boolean;
+  [PlayerSheetName.Economy]: boolean;
 };
 
-export type ExportMatchesToXlsxPayload =
+export type ExportPlayersToXlsxPayload =
   | {
-      exportEachMatchToSingleFile: true;
+      exportEachPlayerToSingleFile: true;
       outputFolderPath: string;
       sheets: SheetsVisibility;
-      matches: {
-        checksum: string;
-        name: string;
-      }[];
+      steamIds: string[];
+      filter: Omit<FetchPlayerFilters, 'steamId'>;
     }
   | {
-      exportEachMatchToSingleFile: false;
+      exportEachPlayerToSingleFile: false;
       outputFilePath: string;
       sheets: SheetsVisibility;
-      checksums: string[];
+      steamIds: string[];
+      filter: Omit<FetchPlayerFilters, 'steamId'>;
     };
 
-export async function exportMatchesToXlsxHandler(payload: ExportMatchesToXlsxPayload) {
+export async function exportPlayersToXlsxHandler(payload: ExportPlayersToXlsxPayload) {
   try {
-    if (payload.exportEachMatchToSingleFile) {
-      for (const [index, match] of payload.matches.entries()) {
+    if (payload.exportEachPlayerToSingleFile) {
+      for (const [index, steamId] of payload.steamIds.entries()) {
         server.sendMessageToRendererProcess({
           name: RendererServerMessageName.ExportToXlsxProgress,
           payload: {
             count: index + 1,
-            totalCount: payload.matches.length,
+            totalCount: payload.steamIds.length,
           },
         });
 
-        const outputFilePath = `${payload.outputFolderPath}/${match.name}.xlsx`;
-        const xlsxExport = new MatchXlsxExport({
-          checksum: match.checksum,
-          outputFilePath,
+        const outputFilePath = `${payload.outputFolderPath}/${steamId}.xlsx`;
+        const xlsxExport = new PlayerXlsxExport({
+          steamId,
+          filter: payload.filter,
           sheets: payload.sheets,
+          outputFilePath,
         });
         await xlsxExport.generate();
       }
     } else {
-      const xlsxExport = new MatchesXlsxExport({
-        checksums: payload.checksums,
+      const xlsxExport = new PlayersXlsxExport({
+        steamIds: payload.steamIds,
         outputFilePath: payload.outputFilePath,
         sheets: payload.sheets,
         onSheetGenerationStart(sheetName) {
@@ -67,7 +65,7 @@ export async function exportMatchesToXlsxHandler(payload: ExportMatchesToXlsxPay
       await xlsxExport.generate();
     }
 
-    const successPayload: ExportToXlsxSuccessPayload = payload.exportEachMatchToSingleFile
+    const successPayload: ExportToXlsxSuccessPayload = payload.exportEachPlayerToSingleFile
       ? {
           outputType: 'folder',
           outputPath: payload.outputFolderPath,
@@ -82,7 +80,7 @@ export async function exportMatchesToXlsxHandler(payload: ExportMatchesToXlsxPay
       payload: successPayload,
     });
   } catch (error) {
-    logger.error('Error while exporting matches to XLSX');
+    logger.error('Error while exporting players to XLSX');
     logger.error(error);
     server.sendMessageToRendererProcess({
       name: RendererServerMessageName.ExportToXlsxError,
